@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import http.client
 import os
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from http.server import ThreadingHTTPServer
+from threading import Thread
 
 from relaypilot.browser import BrowserProfile
 from relaypilot.config import RelaySettings, default_settings_path
@@ -16,7 +19,7 @@ from relaypilot.models import Action, RunState
 from relaypilot.policy import Policy, PolicyDenied
 from relaypilot.planner import PlannerRouter
 from relaypilot.reliability import retry_after_reconciliation
-from relaypilot.webapp import RelayService, _ui_bytes
+from relaypilot.webapp import RelayService, _ui_bytes, _allowed_origin, make_handler
 
 
 COMMAND = "Find the newest PDF in Downloads, copy it to Documents, open the copy, and tell me where you saved it."
@@ -227,6 +230,55 @@ class RelayEngineTests(unittest.TestCase):
         self.assertIn("downloads", snapshot["folders"])
         self.assertEqual(snapshot["sites"], ["perumal100.github.io"])
         self.assertIn(b"Speak naturally", _ui_bytes())
+
+    def test_local_api_rejects_other_websites_before_running_tasks(self) -> None:
+        service = RelayService(Path(self.temp.name) / "server-settings.json")
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+        worker = Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
+        try:
+            connection.request(
+                "POST", "/api/run", body=json.dumps({"command": "Open my Downloads folder"}),
+                headers={"Content-Type": "application/json", "Origin": "https://untrusted.example"},
+            )
+            response = connection.getresponse()
+            self.assertEqual(response.status, 403)
+            self.assertIsNone(response.getheader("Access-Control-Allow-Origin"))
+            response.read()
+            self.assertEqual(service.history.recent(), [])
+
+            connection.request("GET", "/api/snapshot", headers={"Origin": "https://untrusted.example"})
+            response = connection.getresponse()
+            self.assertEqual(response.status, 403)
+            response.read()
+
+            connection.request("GET", "/api/snapshot", headers={"Host": "untrusted.example"})
+            response = connection.getresponse()
+            self.assertEqual(response.status, 403)
+            response.read()
+
+            local_origin = f"http://127.0.0.1:{server.server_port}"
+            connection.request(
+                "POST", "/api/run", body=json.dumps({"command": "How many PDFs are in my Downloads folder?"}),
+                headers={"Content-Type": "application/json", "Origin": local_origin},
+            )
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.getheader("Access-Control-Allow-Origin"), local_origin)
+            self.assertEqual(json.loads(response.read())["state"], "completed")
+        finally:
+            connection.close()
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=2)
+
+    def test_local_api_allows_only_its_own_ui_and_chrome_extensions(self) -> None:
+        self.assertTrue(_allowed_origin("http://127.0.0.1:8721", 8721))
+        self.assertTrue(_allowed_origin("chrome-extension://" + "a" * 32, 8721))
+        self.assertFalse(_allowed_origin("https://untrusted.example", 8721))
+        self.assertFalse(_allowed_origin("null", 8721))
+        self.assertFalse(_allowed_origin("http://127.0.0.1:8722", 8721))
 
     def test_data_directory_override_is_explicit(self) -> None:
         original = os.environ.get("RELAYPILOT_DATA_DIR")
