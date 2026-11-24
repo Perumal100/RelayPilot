@@ -35,5 +35,6 @@ class RunResult:
     state: RunState
     events: list[Event] = field(default_factory=list)
     saved_path: Path | None = None
+    opened_path: Path | None = None
     reason: str | None = None
 

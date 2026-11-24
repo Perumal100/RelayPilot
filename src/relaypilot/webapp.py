@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import shutil
 import subprocess
 import threading
+import time
 import webbrowser
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -15,6 +18,25 @@ from typing import Any
 from .config import RelaySettings, default_settings_path
 from .engine import RelayEngine
 from .history import RunHistory
+from .models import Action, RunState
+from .policy import PolicyDenied
+
+
+_PREVIEW_MIME = {
+    ".pdf": "application/pdf", ".avif": "image/avif", ".bmp": "image/bmp", ".gif": "image/gif",
+    ".jpeg": "image/jpeg", ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
+}
+_PREVIEW_MAX_BYTES = 64 * 1024 * 1024
+_PREVIEW_SECONDS = 600
+
+
+@dataclass(frozen=True)
+class PreviewRecord:
+    path: Path
+    mime: str
+    size: int
+    modified_ns: int
+    expires_at: float
 
 
 class RelayService:
@@ -29,6 +51,8 @@ class RelayService:
         self.history = RunHistory(self.settings_path.with_name("history.jsonl"))
         self.engine = RelayEngine(Path(self.settings.downloads), Path(self.settings.documents), settings=self.settings, history=self.history)
         self._run_lock = threading.Lock()
+        self._preview_lock = threading.Lock()
+        self._previews: dict[str, PreviewRecord] = {}
 
     def run(self, command: str) -> dict[str, Any]:
         if not command.strip():
@@ -37,10 +61,14 @@ class RelayService:
             return {"state": "blocked", "reason": "A run is already active. Stop it or wait for completion.", "events": []}
         try:
             result = self.engine.run(command)
+            preview = self._register_preview(result.opened_path) if result.state == RunState.LAUNCH_REQUESTED else None
             return {
                 "state": result.state.value,
                 "reason": result.reason,
                 "saved_path": str(result.saved_path) if result.saved_path else None,
+                "preview_url": f"/api/preview/{preview[0]}" if preview else None,
+                "preview_type": preview[1] if preview else None,
+                "preview_name": result.opened_path.name if preview else None,
                 "events": [{"message": event.message, "evidence": event.evidence} for event in result.events],
             }
         finally:
@@ -58,6 +86,41 @@ class RelayService:
             "settings_path": str(self.settings_path),
         }
 
+    def _register_preview(self, path: Path | None) -> tuple[str, str] | None:
+        if path is None:
+            return None
+        mime = _PREVIEW_MIME.get(path.suffix.lower())
+        if mime is None:
+            return None
+        try:
+            target = path.resolve(strict=True)
+            self.engine.policy.authorize(Action("open_file", {"path": target}))
+            stat = target.stat()
+            if not target.is_file() or stat.st_size > _PREVIEW_MAX_BYTES:
+                return None
+        except (OSError, PolicyDenied):
+            return None
+        token = secrets.token_urlsafe(24)
+        record = PreviewRecord(target, mime, stat.st_size, stat.st_mtime_ns, time.monotonic() + _PREVIEW_SECONDS)
+        with self._preview_lock:
+            self._previews = {key: item for key, item in self._previews.items() if item.expires_at > time.monotonic()}
+            if len(self._previews) >= 8:
+                self._previews.pop(next(iter(self._previews)))
+            self._previews[token] = record
+        return token, mime
+
+    def preview(self, token: str) -> PreviewRecord:
+        with self._preview_lock:
+            record = self._previews.get(token)
+            if record is None or record.expires_at <= time.monotonic():
+                self._previews.pop(token, None)
+                raise FileNotFoundError("Preview expired or unavailable")
+        self.engine.policy.authorize(Action("open_file", {"path": record.path}))
+        stat = record.path.stat()
+        if not record.path.is_file() or stat.st_size != record.size or stat.st_mtime_ns != record.modified_ns:
+            raise RuntimeError("File changed after selection; run the command again")
+        return record
+
 
 def make_handler(service: RelayService):
     class RelayHandler(BaseHTTPRequestHandler):
@@ -68,6 +131,20 @@ def make_handler(service: RelayService):
                 self._send_bytes(HTTPStatus.OK, "text/html; charset=utf-8", _ui_bytes())
             elif self.path == "/api/snapshot":
                 self._send_json(HTTPStatus.OK, service.snapshot())
+            elif self.path.startswith("/api/preview/"):
+                token = self.path.removeprefix("/api/preview/")
+                if re.fullmatch(r"[A-Za-z0-9_-]{32}", token) is None:
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Preview not found"})
+                    return
+                try:
+                    record = service.preview(token)
+                except (FileNotFoundError, OSError, PolicyDenied):
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Preview not found"})
+                    return
+                except RuntimeError as error:
+                    self._send_json(HTTPStatus.CONFLICT, {"error": str(error)})
+                    return
+                self._send_preview(record)
             else:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
@@ -103,6 +180,18 @@ def make_handler(service: RelayService):
 
         def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
             self._send_bytes(status, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
+
+        def _send_preview(self, record: PreviewRecord) -> None:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", record.mime)
+            self.send_header("Content-Length", str(record.size))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self._cors_headers()
+            self.end_headers()
+            with record.path.open("rb") as stream:
+                shutil.copyfileobj(stream, self.wfile, length=64 * 1024)
 
         def _send_bytes(self, status: HTTPStatus, content_type: str, payload: bytes) -> None:
             self.send_response(status)

@@ -23,6 +23,8 @@ Other built-in local commands include `How many PDFs are saved in my Downloads f
 
 The app uses your Windows Downloads and Documents folders. It will only operate inside these configured roots. The UI opens the copy only after its hash and destination are verified.
 
+For supported images and PDFs, the local workspace also displays the selected file in a short-lived in-app preview after Windows accepts the launch request. The preview is scoped to the granted folders and served only while the local app is running. If the file changes after selection, rerun the command to generate a new preview. Other file types still use the Windows default app without an in-app preview.
+
 ## What is verified in v0.1
 
 - Deterministic offline planner for the newest-PDF copy workflow.

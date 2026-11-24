@@ -16,6 +16,8 @@ Deterministic local file workflows now also cover counting PDFs in Downloads, op
 
 The local HTTP bridge now checks the loopback Host, restricts browser Origins to its own UI and Chrome extension origins, and requires JSON for POST. Cross-site requests cannot invoke `/api/run` or read `/api/snapshot` through a browser. The loopback server still accepts explicit local command-line clients without an Origin header.
 
+The local workspace now offers a short-lived in-app preview for selected images and PDFs. The engine records the file selected after a Windows launch request; the service issues an opaque preview token, rechecks the file scope and modification time, and streams it to the local UI. The visible image load is distinct from the native viewer launch state. Unsupported formats still use the native viewer alone.
+
 ## Resume steps
 
 1. Run `py -m unittest discover -s tests -v`.
