@@ -61,3 +61,6 @@
 - Added regression coverage that an untrusted website cannot trigger a run or read the local snapshot; the app UI remains able to run an ordinary local command.
 - All 29 automated tests passed in the Windows environment, including the loopback HTTP integration test. The GitHub repository has been renamed from `Project-X` to `RelayPilot`.
 
+- Added a short-lived in-app image/PDF preview for files selected by local open workflows. Preview bytes are served through a scoped token and blocked if the file changes after selection; the Windows launch state remains accurately labeled.
+- Added HTTP integration coverage for preview MIME/body, cross-site rejection, changed-file invalidation, and the copied-PDF preview path.
+

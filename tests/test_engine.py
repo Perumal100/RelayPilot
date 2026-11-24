@@ -230,6 +230,58 @@ class RelayEngineTests(unittest.TestCase):
         self.assertIn("downloads", snapshot["folders"])
         self.assertEqual(snapshot["sites"], ["perumal100.github.io"])
         self.assertIn(b"Speak naturally", _ui_bytes())
+        self.assertIn(b'id="preview"', _ui_bytes())
+
+    def test_selected_picture_has_a_scoped_in_app_preview(self) -> None:
+        picture = self.downloads / "latest.png"
+        picture_bytes = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c636000020000050001a5f645400000000049454e44ae426082")
+        picture.write_bytes(picture_bytes)
+        settings_path = Path(self.temp.name) / "preview-settings.json"
+        RelaySettings.defaults(self.downloads, self.documents).save(settings_path)
+        service = RelayService(settings_path)
+        service.engine.opener = self.opened.append
+        result = service.run("Open the latest picture in my Downloads")
+        self.assertEqual(result["state"], "launch_requested")
+        self.assertEqual(result["preview_type"], "image/png")
+        self.assertEqual(self.opened, [picture.resolve()])
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(service))
+        worker = Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
+        try:
+            connection.request("GET", result["preview_url"])
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.getheader("Content-Type"), "image/png")
+            self.assertEqual(response.read(), picture_bytes)
+
+            connection.request("GET", result["preview_url"], headers={"Origin": "https://untrusted.example"})
+            response = connection.getresponse()
+            self.assertEqual(response.status, 403)
+            response.read()
+
+            picture.write_bytes(b"changed after selection")
+            connection.request("GET", result["preview_url"])
+            response = connection.getresponse()
+            self.assertEqual(response.status, 409)
+            response.read()
+        finally:
+            connection.close()
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=2)
+
+    def test_verified_pdf_copy_has_a_pdf_preview(self) -> None:
+        settings_path = Path(self.temp.name) / "pdf-preview-settings.json"
+        RelaySettings.defaults(self.downloads, self.documents).save(settings_path)
+        service = RelayService(settings_path)
+        service.engine.opener = self.opened.append
+        result = service.run(COMMAND)
+        self.assertEqual(result["state"], "launch_requested")
+        self.assertEqual(result["preview_type"], "application/pdf")
+        self.assertTrue(result["preview_url"].startswith("/api/preview/"))
+        self.assertEqual(result["preview_name"], "newest.pdf")
 
     def test_local_api_rejects_other_websites_before_running_tasks(self) -> None:
         service = RelayService(Path(self.temp.name) / "server-settings.json")

@@ -103,6 +103,7 @@ class LocalExecutor:
             if not target.exists():
                 raise FileNotFoundError(f"Verified file no longer exists: {target}")
             self._launch(target)
+            context["opened_file"] = target.resolve()
             return (
                 f"Requested Windows default-app launch: {target.name}",
                 f"target exists and Windows accepted the launch request; path={target.resolve()}",
