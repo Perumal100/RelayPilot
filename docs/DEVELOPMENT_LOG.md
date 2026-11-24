@@ -55,3 +55,9 @@
 - Added regression coverage for newest-image selection, truthful launch evidence, launch failures, and the settings migration for the new action.
 - Changed the visible terminal state for file/folder opens to `launch requested`; only non-launch workflows use `completed`. This prevents the UI from asserting that a PDF or image viewer window was observed.
 
+## 2026-11-24 (America/New_York)
+
+- Hardened the local HTTP bridge against cross-site requests by validating loopback Host and browser Origin before dispatch, restricting CORS responses, and requiring JSON for POST.
+- Added regression coverage that an untrusted website cannot trigger a run or read the local snapshot; the app UI remains able to run an ordinary local command.
+- All 29 automated tests passed in the Windows environment, including the loopback HTTP integration test. The GitHub repository has been renamed from `Project-X` to `RelayPilot`.
+
