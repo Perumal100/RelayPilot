@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {classifyCommand} from "../extension/commands.mjs";
+import {localPreview} from "../extension/preview.mjs";
+
+const previewPath = `/api/preview/${"A".repeat(32)}`;
+
+test("file preview accepts only a launch result and a local opaque token", () => {
+  assert.deepEqual(localPreview({state: "launch_requested", preview_type: "image/png", preview_url: previewPath, preview_name: "latest.png"}), {
+    url: `http://127.0.0.1:8721${previewPath}`, type: "image/png", name: "latest.png",
+  });
+  assert.equal(localPreview({state: "completed", preview_type: "image/png", preview_url: previewPath}), null);
+  assert.equal(localPreview({state: "launch_requested", preview_type: "image/svg+xml", preview_url: previewPath}), null);
+  assert.equal(localPreview({state: "launch_requested", preview_type: "image/png", preview_url: "https://untrusted.example/image.png"}), null);
+  assert.equal(localPreview({state: "launch_requested", preview_type: "image/png", preview_url: "/api/preview/../../secret"}), null);
+});
 
 test("browser requests route to Chrome while local file requests stay local", () => {
   assert.deepEqual(classifyCommand("Search Google for Tableau examples"), {kind: "browser-search", query: "Tableau examples"});
@@ -23,15 +36,17 @@ test("summarization is not mislabeled as a page read", () => {
 test("popup sends browser tasks to Chrome and renders page text as text", async () => {
   const saved = {chrome: globalThis.chrome, document: globalThis.document, window: globalThis.window, fetch: globalThis.fetch};
   const elements = new Map();
-  const element = name => ({name, textContent: "", value: "", listeners: {}, addEventListener(type, callback) { this.listeners[type] = callback; }});
-  for (const name of ["#command", "#voice", "#connection", "#run", "#tabTitle", "#tabUrl"]) elements.set(name, element(name));
+  const element = name => ({name, textContent: "", value: "", children: [], listeners: {},
+    addEventListener(type, callback) { this.listeners[type] = callback; },
+    replaceChildren() { this.children = []; }, append(child) { this.children.push(child); }});
+  for (const name of ["#command", "#voice", "#connection", "#run", "#tabTitle", "#tabUrl", "#preview", "#previewBody", "#previewStatus"]) elements.set(name, element(name));
   const title = element("result title"), paragraph = element("result message"), result = element("#result");
   result.querySelector = selector => selector === "strong" ? title : paragraph;
   Object.defineProperty(result, "innerHTML", {set() { throw new Error("Untrusted HTML insertion"); }});
   elements.set("#result", result);
   const localRuns = [];
   const browserRuns = [];
-  globalThis.document = {querySelector: selector => elements.get(selector)};
+  globalThis.document = {querySelector: selector => elements.get(selector), createElement: element};
   globalThis.window = {};
   globalThis.chrome = {runtime: {sendMessage(message, callback) {
     if (message.kind === "active-tab") return callback({title: "Active page", url: "https://example.test"});
@@ -40,8 +55,11 @@ test("popup sends browser tasks to Chrome and renders page text as text", async 
   }}};
   globalThis.fetch = async (url, options) => {
     if (url.endsWith("/api/snapshot")) return {ok: true};
-    localRuns.push(JSON.parse(options.body).command);
-    return {ok: true, json: async () => ({state: "launch_requested", events: [{message: "Launch requested", evidence: "file exists"}]})};
+    const localCommand = JSON.parse(options.body).command;
+    localRuns.push(localCommand);
+    const pdf = localCommand.includes("PDF");
+    return {ok: true, json: async () => ({state: "launch_requested", events: [{message: "Launch requested", evidence: "file exists"}],
+      preview_url: previewPath, preview_type: pdf ? "application/pdf" : "image/png", preview_name: pdf ? "newest.pdf" : "latest.png"})};
   };
   try {
     await import("../extension/popup.js?routing-test");
@@ -55,6 +73,23 @@ test("popup sends browser tasks to Chrome and renders page text as text", async 
     await elements.get("#run").listeners.click();
     assert.deepEqual(localRuns, ["Open the latest picture in my Downloads"]);
     assert.equal(title.textContent, "LAUNCH REQUESTED");
+    assert.equal(elements.get("#preview").hidden, false);
+    const [image, link] = elements.get("#previewBody").children;
+    assert.equal(image.src, `http://127.0.0.1:8721${previewPath}`);
+    assert.equal(link.href, image.src);
+    image.onload();
+    assert.equal(elements.get("#previewStatus").textContent, "Image loaded: latest.png");
+
+    elements.get("#command").value = "Open my oldest PDF on my PC";
+    await elements.get("#run").listeners.click();
+    assert.equal(elements.get("#previewBody").children.length, 1);
+    assert.equal(elements.get("#previewBody").children[0].textContent, "Open PDF preview in a new tab");
+    assert.match(elements.get("#previewStatus").textContent, /Open it in a tab/);
+
+    elements.get("#command").value = "Read this page";
+    await elements.get("#run").listeners.click();
+    assert.equal(elements.get("#preview").hidden, true);
+    assert.deepEqual(elements.get("#previewBody").children, []);
   } finally {
     Object.assign(globalThis, saved);
   }

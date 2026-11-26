@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RelayPilot",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Explicit, evidence-first browser and local task control.",
   "action": {"default_title": "RelayPilot", "default_popup": "popup.html"},
   "background": {"service_worker": "background.js", "type": "module"},
