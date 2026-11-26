@@ -2,7 +2,7 @@
 
 ## Current state
 
-The GitHub repository is now `Perumal100/RelayPilot` (renamed from `Project-X`). PRs #1–#5 were merged; the current `develop` branch still contains the tested app baseline. The expected command finds the newest `.pdf` under Downloads, copies it into Documents, verifies both hashes, and requests that Windows launch the verified copy when allowed.
+The GitHub repository is now `Perumal100/RelayPilot` (renamed from `Project-X`). PRs #1–#9 are merged into `develop`; `main` has not yet received PRs #7–#9. The expected command finds the newest `.pdf` under Downloads, copies it into Documents, verifies both hashes, and requests that Windows launch the verified copy when allowed.
 
 The connected `Open Heat-Signal and report the visible status` workflow is now also available. It is read-only, checks a single granted HTTPS site, and reports a connectivity blocker instead of guessing when offline.
 
@@ -17,6 +17,8 @@ Deterministic local file workflows now also cover counting PDFs in Downloads, op
 The local HTTP bridge now checks the loopback Host, restricts browser Origins to its own UI and Chrome extension origins, and requires JSON for POST. Cross-site requests cannot invoke `/api/run` or read `/api/snapshot` through a browser. The loopback server still accepts explicit local command-line clients without an Origin header.
 
 The local workspace now offers a short-lived in-app preview for selected images and PDFs. The engine records the file selected after a Windows launch request; the service issues an opaque preview token, rechecks the file scope and modification time, and streams it to the local UI. The visible image load is distinct from the native viewer launch state. Unsupported formats still use the native viewer alone.
+
+The Chrome popup now consumes the same local preview response: it renders a selected image once loaded and provides a PDF preview link. It validates the local token path and supported MIME type before constructing a loopback URL, clears stale previews on each run, and never treats a PDF link as proof that the document opened. Reload the unpacked extension after updating this branch. Visual behavior in Chrome still needs an interactive pass.
 
 ## Resume steps
 

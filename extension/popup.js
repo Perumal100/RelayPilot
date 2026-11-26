@@ -1,11 +1,42 @@
 import {classifyCommand} from "./commands.mjs";
+import {localPreview} from "./preview.mjs";
 
 const $ = selector => document.querySelector(selector);
 const command = $("#command"), voice = $("#voice"), result = $("#result"), connection = $("#connection"), run = $("#run");
+const preview = $("#preview"), previewBody = $("#previewBody"), previewStatus = $("#previewStatus");
 
 function render(state, message, evidence = "") {
   result.querySelector("strong").textContent = String(state || "blocked").replaceAll("_", " ").toUpperCase();
   result.querySelector("p").textContent = `${message}${evidence ? `\n\n${evidence}` : ""}`;
+}
+
+function clearPreview() {
+  preview.hidden = true;
+  previewBody.replaceChildren();
+  previewStatus.textContent = "";
+}
+
+function showPreview(output) {
+  const selected = localPreview(output);
+  if (!selected) return;
+  const link = document.createElement("a");
+  link.href = selected.url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = selected.type === "application/pdf" ? "Open PDF preview in a new tab" : "Open image preview in a new tab";
+  if (selected.type.startsWith("image/")) {
+    const image = document.createElement("img");
+    image.alt = selected.name;
+    image.onload = () => { previewStatus.textContent = `Image loaded: ${selected.name}`; };
+    image.onerror = () => { previewStatus.textContent = "Image preview could not load. Run the task again."; };
+    image.src = selected.url;
+    previewBody.append(image);
+    previewStatus.textContent = `Loading image: ${selected.name}`;
+  } else {
+    previewStatus.textContent = `PDF selected: ${selected.name}. Open it in a tab to view it.`;
+  }
+  previewBody.append(link);
+  preview.hidden = false;
 }
 
 async function checkLocalAgent() {
@@ -33,6 +64,7 @@ chrome.runtime.sendMessage({kind: "active-tab"}, tab => {
 
 run.addEventListener("click", async () => {
   const text = command.value.trim();
+  clearPreview();
   if (!text) return render("blocked", "Type or dictate a command first.");
   run.disabled = true;
   try {
@@ -49,6 +81,7 @@ run.addEventListener("click", async () => {
     const output = await response.json();
     const last = output.events?.at(-1);
     render(output.state, last?.message || output.reason || "Finished", last?.evidence || output.reason || "");
+    showPreview(output);
   } catch (error) {
     render("blocked", `Local agent unavailable: ${error.message}. Start RelayPilot and try again.`);
   } finally {

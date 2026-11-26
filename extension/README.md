@@ -13,4 +13,6 @@ Without the local app running, the extension can explicitly open a Google search
 
 These browser commands now run in Chrome even when the local app is connected. Local file commands go to the local app. `Read this page` returns a bounded visible-text excerpt; RelayPilot does not claim to summarize a page without a configured planner. Reload the unpacked extension in `chrome://extensions` after updating its files.
 
+When the local app selects a supported image, the popup shows the image after it loads and offers a link to open the preview in a tab. For a selected PDF, it shows an explicit link to the PDF preview; click that link to view it. The popup retains `launch requested` for the Windows viewer result because it cannot observe that viewer. Preview links are short-lived and work only while the local app is running. Open the popup again after it closes to run another task; its preview is not kept as permanent history.
+
 The extension does not read passwords, browser cookies, or private Google data. Google email, Drive, Calendar, Docs, and other account data require a dedicated OAuth integration with narrow user-approved scopes; that integration is intentionally not silently implied by installing the extension.

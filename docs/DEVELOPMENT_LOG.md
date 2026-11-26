@@ -64,3 +64,8 @@
 - Added a short-lived in-app image/PDF preview for files selected by local open workflows. Preview bytes are served through a scoped token and blocked if the file changes after selection; the Windows launch state remains accurately labeled.
 - Added HTTP integration coverage for preview MIME/body, cross-site rejection, changed-file invalidation, and the copied-PDF preview path.
 
+## 2026-11-25 (America/New_York)
+
+- Added selected-image previews and an explicit PDF preview link to the Chrome popup, using the existing short-lived local preview token. The popup validates token shape and MIME type, keeps launch-request evidence separate from displayed-image evidence, and clears stale previews on each run.
+- Extended extension tests for safe local preview URLs, visible-image load state, PDF link behavior, and preview clearing. Native Chrome rendering still requires an interactive check.
+
