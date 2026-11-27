@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Protocol
 
@@ -23,15 +24,28 @@ class DeterministicOfflinePlanner:
         normalized = " ".join(command.lower().split())
         if "heat-signal" in normalized and "status" in normalized:
             return [Action("browser_read_status", {"url": "https://perumal100.github.io/Heat-Signal/"})]
-        required = ("newest pdf", "downloads", "copy", "documents")
-        if all(fragment in normalized for fragment in required):
-            return [
+        newest_pdf = any(phrase in normalized for phrase in ("newest pdf", "latest pdf", "most recent pdf"))
+        copy_requested = bool(re.search(r"\bcopy\b", normalized)) and not bool(
+            re.search(r"\b(?:don't|do not|never|without)\s+copy\b", normalized)
+        )
+        open_requested = bool(re.search(r"\bopen\b", normalized)) and not bool(
+            re.search(r"\b(?:don't|do not|never|without)\s+open(?:ing)?\b", normalized)
+        )
+        if newest_pdf and "download" in normalized and copy_requested and "document" in normalized:
+            actions = [
                 Action("find_newest_pdf", {"folder": downloads}),
                 Action("copy_file", {"source": "@newest_pdf", "destination_folder": documents}),
-                Action("open_file", {"path": "@copied_pdf"}),
             ]
+            if open_requested:
+                actions.append(Action("open_file", {"path": "@copied_pdf"}))
+            return actions
         if "how many" in normalized and "pdf" in normalized and "download" in normalized:
             return [Action("count_pdfs", {"folder": downloads})]
+        if newest_pdf and open_requested and "download" in normalized:
+            return [
+                Action("find_newest_pdf", {"folder": downloads}),
+                Action("open_file", {"path": "@newest_pdf"}),
+            ]
         if "oldest pdf" in normalized:
             actions = [Action("find_oldest_pdf", {"folder": downloads})]
             if "open" in normalized:

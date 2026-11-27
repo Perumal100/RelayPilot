@@ -92,6 +92,8 @@ class LocalExecutor:
         if action.kind == "open_file":
             if action.arguments["path"] == "@copied_pdf":
                 target = context["copied_pdf"]
+            elif action.arguments["path"] == "@newest_pdf":
+                target = context["newest_pdf"]
             elif action.arguments["path"] == "@selected_pdf":
                 target = context["selected_pdf"]
             elif action.arguments["path"] == "@selected_file":

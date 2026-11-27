@@ -74,3 +74,8 @@
 - Changed local preview delivery to open and validate the file handle before sending HTTP success headers. The preview now checks file identity as well as size and modification time, so a same-size, same-time replacement is rejected.
 - Extended HTTP integration coverage for a replaced file and a removed file. All 31 Python tests passed locally on Windows; extension behavior remains covered by the separate Node suite.
 
+## 2026-11-27 (America/New_York)
+
+- Added deterministic `latest/newest/most recent PDF in Downloads` open commands that launch the original PDF without copying it. The existing copy workflow now accepts those alternate phrasings, still verifies the destination hash, and only opens the copy if requested.
+- Kept PC-wide latest-PDF requests blocked unless the user names the supported Downloads scope. A negated copy or open instruction is respected rather than inferred as an action. Added tests for original-file launch, copy-only behavior, negation, preview registration, and scope boundaries; 37 Python tests passed locally on Windows.
+

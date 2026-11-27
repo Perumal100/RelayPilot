@@ -4,7 +4,7 @@ RelayPilot is an early Windows task assistant with a local app-style workspace a
 
 ## Project status
 
-As of November 24, 2026, PRs [#7](https://github.com/Perumal100/RelayPilot/pull/7) and [#8](https://github.com/Perumal100/RelayPilot/pull/8) are merged into `develop`. They added reliable browser command routing and in-app previews for selected images and PDFs. `main` has not received those two PRs. Use `develop` for the current trial; review it before promoting it to `main`.
+The `develop` branch contains the current Chrome companion, in-app file previews, and preview integrity checks. `main` remains on an earlier release. Use `develop` for the current trial; review it before promoting it to `main`.
 
 The source, local app, and unpacked Chrome extension are available for a developer trial. There is no signed Windows installer or hosted agent. The [synthetic demo](demo/) is intended for GitHub Pages; it is not the working app. A full interactive pass on a Windows desktop, including microphone behavior and native viewer visibility, is still outstanding.
 
@@ -28,7 +28,9 @@ Enter one of these supported local commands and click **Run task** or press `Ctr
 | Command example | Current behavior |
 | --- | --- |
 | `Find the newest PDF in Downloads, copy it to Documents, open the copy, and tell me where you saved it.` | Selects the newest PDF, copies it without overwriting an existing file, verifies the destination hash, and requests a Windows default-app launch. |
+| `Copy the most recent PDF in Downloads to Documents` | Copies and verifies the PDF without opening a viewer. |
 | `How many PDFs are saved in my Downloads folder?` | Counts PDFs in the configured Downloads folder. |
+| `Open the latest PDF in Downloads` | Selects the newest PDF from the configured Downloads folder and requests a launch without copying it. `Most recent PDF` also works. |
 | `Open my oldest PDF on my PC` | Selects the oldest PDF from the configured Downloads folder and requests a launch. It does not search the whole PC. |
 | `Open the latest picture in my Downloads folder` | Selects the newest supported image from Downloads and requests a launch. |
 | `Open my Downloads folder` or `Open my Documents folder` | Requests a Windows folder launch. |
@@ -63,6 +65,6 @@ py -m unittest discover -s tests -v
 node --test tests/extension.test.mjs
 ```
 
-The extension tests use Node.js 22 in CI. The latest merged work passed 31 Python tests and five extension tests in [GitHub Actions](https://github.com/Perumal100/RelayPilot/actions/runs/45510102512). These tests cover the supported workflows and HTTP boundaries; they do not substitute for an interactive hardware trial.
+The extension tests use Node.js 22 in CI. [GitHub Actions](https://github.com/Perumal100/RelayPilot/actions) runs both suites for PRs to `develop`. These tests cover the supported workflows and HTTP boundaries; they do not substitute for an interactive hardware trial.
 
 For a Python-equipped Windows machine, `powershell -ExecutionPolicy Bypass -File scripts\package.ps1` creates `dist\RelayPilot.pyz`. Run it with `py dist\RelayPilot.pyz`. This is a portable Python package, not an installer or a cloud deployment link.

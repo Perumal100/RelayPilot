@@ -2,7 +2,7 @@
 
 ## Current state
 
-The GitHub repository is now `Perumal100/RelayPilot` (renamed from `Project-X`). PRs #1–#10 are merged into `develop`; `main` has not yet received PRs #7–#10. The expected command finds the newest `.pdf` under Downloads, copies it into Documents, verifies both hashes, and requests that Windows launch the verified copy when allowed.
+The GitHub repository is now `Perumal100/RelayPilot` (renamed from `Project-X`). PRs #1–#11 are merged into `develop`; `main` has not yet received PRs #7–#11. The expected command finds the newest `.pdf` under Downloads, copies it into Documents, verifies both hashes, and requests that Windows launch the verified copy when allowed.
 
 The connected `Open Heat-Signal and report the visible status` workflow is now also available. It is read-only, checks a single granted HTTPS site, and reports a connectivity blocker instead of guessing when offline.
 
@@ -13,6 +13,8 @@ Verified in this development environment: automated tests, portable package cont
 The current UI is served locally by `relaypilot.webapp` and launched as an app-style browser window by `relaypilot.app`. It provides optional browser voice capture as transcription only; the user still explicitly runs each task. Validate the visual layout and microphone browser prompt on the interactive Windows desktop after updating from `develop`.
 
 Deterministic local file workflows now also cover counting PDFs in Downloads, opening the oldest PDF, opening the latest supported picture in Downloads, and opening approved local folders. File-launch evidence now accurately records the verified target and Windows launch request; it does not claim that an app window became visible. The UI records this as `launch requested`, not `completed`. Add a local folder to `readable_folders` in settings before using it; latest automated validation is recorded in the development log.
+
+The planner now also handles `Open the latest PDF in Downloads` and `Open the most recent PDF in Downloads`. This reuses the scoped newest-PDF finder, requests launch of the original file without a copy, and offers the PDF preview. The newest-PDF copy workflow accepts `latest` and `most recent` wording while retaining hash verification; a copy-only request no longer opens a viewer. A request for the latest PDF without naming Downloads remains blocked rather than implying a PC-wide search.
 
 The local HTTP bridge now checks the loopback Host, restricts browser Origins to its own UI and Chrome extension origins, and requires JSON for POST. Cross-site requests cannot invoke `/api/run` or read `/api/snapshot` through a browser. The loopback server still accepts explicit local command-line clients without an Origin header.
 
