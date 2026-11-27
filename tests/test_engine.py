@@ -261,10 +261,23 @@ class RelayEngineTests(unittest.TestCase):
             self.assertEqual(response.status, 403)
             response.read()
 
-            picture.write_bytes(b"changed after selection")
+            original_stat = picture.stat()
+            replacement = self.downloads / "replacement.png"
+            replacement.write_bytes(b"x" * len(picture_bytes))
+            os.utime(replacement, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+            replacement.replace(picture)
+            self.assertEqual(picture.stat().st_size, original_stat.st_size)
+            self.assertEqual(picture.stat().st_mtime_ns, original_stat.st_mtime_ns)
+            self.assertNotEqual(picture.stat().st_ino, original_stat.st_ino)
             connection.request("GET", result["preview_url"])
             response = connection.getresponse()
             self.assertEqual(response.status, 409)
+            response.read()
+
+            picture.unlink()
+            connection.request("GET", result["preview_url"])
+            response = connection.getresponse()
+            self.assertEqual(response.status, 404)
             response.read()
         finally:
             connection.close()
