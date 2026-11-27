@@ -116,6 +116,42 @@ class RelayEngineTests(unittest.TestCase):
         self.assertEqual(result.state, RunState.LAUNCH_REQUESTED)
         self.assertEqual(self.opened, [(self.downloads / "old.pdf").resolve()])
 
+    def test_opens_latest_pdf_without_copying_it(self) -> None:
+        for wording in ("Open the latest PDF in my Downloads", "Open the most recent PDF in Downloads"):
+            with self.subTest(wording=wording):
+                result = self.engine.run(wording)
+                self.assertEqual(result.state, RunState.LAUNCH_REQUESTED)
+                self.assertEqual(result.opened_path, (self.downloads / "newest.pdf").resolve())
+                self.assertEqual(result.saved_path, None)
+                self.assertIn("newest.pdf", result.events[-1].evidence)
+        self.assertEqual(self.opened, [(self.downloads / "newest.pdf").resolve()] * 2)
+        self.assertEqual(list(self.documents.iterdir()), [])
+
+    def test_latest_pdf_copy_wording_still_verifies_and_opens_the_copy(self) -> None:
+        result = self.engine.run("Find the latest PDF in Downloads, copy it to Documents, and open the copy")
+        self.assertEqual(result.state, RunState.LAUNCH_REQUESTED)
+        self.assertEqual(result.saved_path, (self.documents / "newest.pdf").resolve())
+        self.assertEqual(self.opened, [(self.documents / "newest.pdf").resolve()])
+        self.assertEqual((self.documents / "newest.pdf").read_bytes(), b"newest content")
+
+    def test_copy_request_without_open_does_not_launch_a_viewer(self) -> None:
+        result = self.engine.run("Copy the most recent PDF in Downloads to Documents, but do not open it")
+        self.assertEqual(result.state, RunState.COMPLETED)
+        self.assertEqual(result.saved_path, (self.documents / "newest.pdf").resolve())
+        self.assertEqual(self.opened, [])
+        self.assertEqual((self.documents / "newest.pdf").read_bytes(), b"newest content")
+
+    def test_open_request_without_copy_does_not_copy_a_pdf(self) -> None:
+        result = self.engine.run("Open the latest PDF in Downloads without copying it to Documents")
+        self.assertEqual(result.state, RunState.LAUNCH_REQUESTED)
+        self.assertEqual(self.opened, [(self.downloads / "newest.pdf").resolve()])
+        self.assertEqual(list(self.documents.iterdir()), [])
+
+    def test_latest_pdf_request_without_a_folder_does_not_imply_a_pc_wide_search(self) -> None:
+        result = self.engine.run("Open the latest PDF on my PC")
+        self.assertEqual(result.state, RunState.BLOCKED)
+        self.assertEqual(self.opened, [])
+
     def test_finds_and_requests_launch_of_latest_picture_in_downloads(self) -> None:
         (self.downloads / "old.jpg").write_bytes(b"old picture")
         time.sleep(0.01)
@@ -295,6 +331,18 @@ class RelayEngineTests(unittest.TestCase):
         self.assertEqual(result["preview_type"], "application/pdf")
         self.assertTrue(result["preview_url"].startswith("/api/preview/"))
         self.assertEqual(result["preview_name"], "newest.pdf")
+
+    def test_latest_pdf_open_has_a_pdf_preview_without_a_copy(self) -> None:
+        settings_path = Path(self.temp.name) / "latest-pdf-settings.json"
+        RelaySettings.defaults(self.downloads, self.documents).save(settings_path)
+        service = RelayService(settings_path)
+        service.engine.opener = self.opened.append
+        result = service.run("Open the latest PDF in Downloads")
+        self.assertEqual(result["state"], "launch_requested")
+        self.assertEqual(result["preview_type"], "application/pdf")
+        self.assertEqual(result["preview_name"], "newest.pdf")
+        self.assertEqual(self.opened, [(self.downloads / "newest.pdf").resolve()])
+        self.assertEqual(list(self.documents.iterdir()), [])
 
     def test_local_api_rejects_other_websites_before_running_tasks(self) -> None:
         service = RelayService(Path(self.temp.name) / "server-settings.json")
