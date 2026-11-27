@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
 import shutil
@@ -13,7 +14,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from .config import RelaySettings, default_settings_path
 from .engine import RelayEngine
@@ -36,6 +37,8 @@ class PreviewRecord:
     mime: str
     size: int
     modified_ns: int
+    device: int
+    inode: int
     expires_at: float
 
 
@@ -101,7 +104,10 @@ class RelayService:
         except (OSError, PolicyDenied):
             return None
         token = secrets.token_urlsafe(24)
-        record = PreviewRecord(target, mime, stat.st_size, stat.st_mtime_ns, time.monotonic() + _PREVIEW_SECONDS)
+        record = PreviewRecord(
+            target, mime, stat.st_size, stat.st_mtime_ns, stat.st_dev, stat.st_ino,
+            time.monotonic() + _PREVIEW_SECONDS,
+        )
         with self._preview_lock:
             self._previews = {key: item for key, item in self._previews.items() if item.expires_at > time.monotonic()}
             if len(self._previews) >= 8:
@@ -109,17 +115,26 @@ class RelayService:
             self._previews[token] = record
         return token, mime
 
-    def preview(self, token: str) -> PreviewRecord:
+    def open_preview(self, token: str) -> tuple[PreviewRecord, BinaryIO]:
         with self._preview_lock:
             record = self._previews.get(token)
             if record is None or record.expires_at <= time.monotonic():
                 self._previews.pop(token, None)
                 raise FileNotFoundError("Preview expired or unavailable")
-        self.engine.policy.authorize(Action("open_file", {"path": record.path}))
-        stat = record.path.stat()
-        if not record.path.is_file() or stat.st_size != record.size or stat.st_mtime_ns != record.modified_ns:
+        if record.path.resolve(strict=True) != record.path:
             raise RuntimeError("File changed after selection; run the command again")
-        return record
+        self.engine.policy.authorize(Action("open_file", {"path": record.path}))
+        stream = record.path.open("rb")
+        try:
+            stat = os.fstat(stream.fileno())
+            if (stat.st_size, stat.st_mtime_ns, stat.st_dev, stat.st_ino) != (
+                record.size, record.modified_ns, record.device, record.inode
+            ):
+                raise RuntimeError("File changed after selection; run the command again")
+            return record, stream
+        except Exception:
+            stream.close()
+            raise
 
 
 def make_handler(service: RelayService):
@@ -137,14 +152,15 @@ def make_handler(service: RelayService):
                     self._send_json(HTTPStatus.NOT_FOUND, {"error": "Preview not found"})
                     return
                 try:
-                    record = service.preview(token)
+                    record, stream = service.open_preview(token)
                 except (FileNotFoundError, OSError, PolicyDenied):
                     self._send_json(HTTPStatus.NOT_FOUND, {"error": "Preview not found"})
                     return
                 except RuntimeError as error:
                     self._send_json(HTTPStatus.CONFLICT, {"error": str(error)})
                     return
-                self._send_preview(record)
+                with stream:
+                    self._send_preview(record, stream)
             else:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
@@ -181,7 +197,7 @@ def make_handler(service: RelayService):
         def _send_json(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
             self._send_bytes(status, "application/json; charset=utf-8", json.dumps(payload).encode("utf-8"))
 
-        def _send_preview(self, record: PreviewRecord) -> None:
+        def _send_preview(self, record: PreviewRecord, stream: BinaryIO) -> None:
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", record.mime)
             self.send_header("Content-Length", str(record.size))
@@ -190,8 +206,7 @@ def make_handler(service: RelayService):
             self.send_header("Referrer-Policy", "no-referrer")
             self._cors_headers()
             self.end_headers()
-            with record.path.open("rb") as stream:
-                shutil.copyfileobj(stream, self.wfile, length=64 * 1024)
+            shutil.copyfileobj(stream, self.wfile, length=64 * 1024)
 
         def _send_bytes(self, status: HTTPStatus, content_type: str, payload: bytes) -> None:
             self.send_response(status)

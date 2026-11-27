@@ -69,3 +69,8 @@
 - Added selected-image previews and an explicit PDF preview link to the Chrome popup, using the existing short-lived local preview token. The popup validates token shape and MIME type, keeps launch-request evidence separate from displayed-image evidence, and clears stale previews on each run.
 - Extended extension tests for safe local preview URLs, visible-image load state, PDF link behavior, and preview clearing. Native Chrome rendering still requires an interactive check.
 
+## 2026-11-26 (America/New_York)
+
+- Changed local preview delivery to open and validate the file handle before sending HTTP success headers. The preview now checks file identity as well as size and modification time, so a same-size, same-time replacement is rejected.
+- Extended HTTP integration coverage for a replaced file and a removed file. All 31 Python tests passed locally on Windows; extension behavior remains covered by the separate Node suite.
+
